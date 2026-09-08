@@ -1,0 +1,42 @@
+{
+ "description": "probe.img",
+ "driverShortName": "GTiff",
+ "driverLongName": "Erdas Imagine Images (.img)",
+ "size": [
+  40,
+  30
+ ],
+ "geoTransform": [
+  500000.0,
+  25.0,
+  0.0,
+  4600750.0,
+  0.0,
+  -25.0
+ ],
+ "bands": [
+  {
+   "band": 1,
+   "type": "Byte",
+   "colorInterpretation": "Red",
+   "description": "Red"
+  },
+  {
+   "band": 2,
+   "type": "Byte",
+   "colorInterpretation": "Green"
+  },
+  {
+   "band": 3,
+   "type": "Byte",
+   "colorInterpretation": "Blue"
+  }
+ ],
+ "coordinateSystem": {
+  "wkt": "PROJCRS[\"WGS 84 / UTM zone 33N\",\n    ID[\"EPSG\",32633]]",
+  "dataAxisToSRSAxisMapping": [
+   1,
+   2
+  ]
+ }
+}

@@ -1,0 +1,12 @@
+# Build output
+bin/
+obj/
+
+# Report of the in-Rhino test
+rhino_test_report.txt
+
+# The sample .img files, which tools/make_sample_dem.py writes with GDAL
+tests/samples/
+
+# macOS
+.DS_Store
