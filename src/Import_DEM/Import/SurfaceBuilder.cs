@@ -17,17 +17,17 @@ namespace Import_DEM.Import
         /// <param name="grid">The samples.</param>
         /// <param name="tile">The rectangle of the grid that becomes this surface.</param>
         /// <param name="surfaceType">Through the samples, or from the samples as control points.</param>
-        /// <param name="offset">The translation added to every point.</param>
-        /// <param name="elevationFactor">The factor that turns a sample into a Z coordinate.</param>
+        /// <param name="transform">The unit scale and the offset that place the tile in the document.</param>
+        /// <param name="elevationFactor">The factor that turns a sample into a Z coordinate in the source unit.</param>
         /// <returns>The surface, or null when Rhino could not build it.</returns>
         public static NurbsSurface? Build(
             ElevationGrid grid,
             GridTile tile,
             SurfaceType surfaceType,
-            Vector3d offset,
+            PointTransform transform,
             double elevationFactor)
         {
-            var points = BuildPoints(grid, tile, offset, elevationFactor);
+            var points = BuildPoints(grid, tile, transform, elevationFactor);
 
             // A tile at the edge of the grid can be thinner than the preferred degree allows.
             var uDegree = DegreeFor(tile.ColumnCount);
@@ -42,7 +42,11 @@ namespace Import_DEM.Import
         /// The grid of points of one tile. The order is the RhinoCommon grid order: the V index,
         /// which is the row, runs fastest.
         /// </summary>
-        private static Point3d[] BuildPoints(ElevationGrid grid, GridTile tile, Vector3d offset, double elevationFactor)
+        private static Point3d[] BuildPoints(
+            ElevationGrid grid,
+            GridTile tile,
+            PointTransform transform,
+            double elevationFactor)
         {
             var points = new Point3d[tile.PointCount];
             var index = 0;
@@ -50,15 +54,15 @@ namespace Import_DEM.Import
             for (var column = 0; column < tile.ColumnCount; column++)
             {
                 var gridColumn = tile.ColumnStart + column;
-                var x = grid.XAt(gridColumn) + offset.X;
+                var x = grid.XAt(gridColumn);
 
                 for (var row = 0; row < tile.RowCount; row++)
                 {
                     var gridRow = tile.RowStart + row;
-                    points[index++] = new Point3d(
+                    points[index++] = transform.Apply(
                         x,
-                        grid.YAt(gridRow) + offset.Y,
-                        grid.GetSample(gridColumn, gridRow) * elevationFactor + offset.Z);
+                        grid.YAt(gridRow),
+                        grid.GetSample(gridColumn, gridRow) * elevationFactor);
                 }
             }
 

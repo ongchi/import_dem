@@ -17,7 +17,13 @@ namespace Import_DEM.Import
         /// <summary>Reads the raster and adds the surfaces to the document.</summary>
         public ImportReport Import(RhinoDoc doc, ImageSummary summary, ImportOptions options)
         {
-            var report = new ImportReport { Stride = options.Stride };
+            var transform = PointTransform.For(doc, options);
+            var report = new ImportReport
+            {
+                Stride = options.Stride,
+                ModelScale = transform.Scale,
+                LayoutScale = options.LayoutScale(doc),
+            };
             RequireAxisAlignedRaster(summary.Info);
             WarnAboutTheBand(summary.Info, options, report);
 
@@ -25,12 +31,11 @@ namespace Import_DEM.Import
             report.Columns = grid.Columns;
             report.Rows = grid.Rows;
 
-            var offset = options.ApplyOffset ? options.Offset : Vector3d.Zero;
             HandleVoids(grid, options, report);
-            AddSurfaces(doc, grid, options, offset, summary.Info.CoordinateSystemWkt, report);
+            AddSurfaces(doc, grid, options, transform, summary.Info.CoordinateSystemWkt, report);
 
             if (options.ApplyOffset)
-                OriginOffset.WriteToDocument(doc, offset);
+                OriginOffset.WriteToDocument(doc, transform.Offset);
 
             return report;
         }
@@ -97,7 +102,7 @@ namespace Import_DEM.Import
             RhinoDoc doc,
             ElevationGrid grid,
             ImportOptions options,
-            Vector3d offset,
+            PointTransform transform,
             string? projectionWkt,
             ImportReport report)
         {
@@ -119,7 +124,7 @@ namespace Import_DEM.Import
                     continue;
                 }
 
-                var surface = SurfaceBuilder.Build(grid, tile, options.SurfaceType, offset, options.ElevationFactor);
+                var surface = SurfaceBuilder.Build(grid, tile, options.SurfaceType, transform, options.ElevationFactor);
                 if (surface is null)
                 {
                     report.FailedTileCount++;

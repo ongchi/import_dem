@@ -76,6 +76,8 @@ every option.
 | NoDataElevation | The elevation for the `Constant` mode. |
 | ElevationScale | A factor on Z, for a vertical exaggeration. |
 | ElevationUnitFactor | Converts the elevation unit to the horizontal unit, for example 0.3048 for feet in a metre grid. |
+| ModelUnits | The unit of the source coordinates. The import scales X, Y and Z to the model unit of the document. |
+| LayoutUnits | The unit of the source coordinates for a layout. See [Units](#units). |
 | MoveToOrigin | Moves the data near the world origin. |
 | OffsetX, OffsetY | The translation added to every coordinate. |
 | GroupTiles | Groups the surfaces of one import. |
@@ -128,6 +130,39 @@ needs an elevation:
 | `SkipTile` | Build no surface for a tile that holds a void. |
 
 The report counts the voids and the skipped tiles.
+
+## Units
+
+A DEM states its coordinates in the unit of its coordinate system, and the plugin does not
+read that unit from the file. `ModelUnits` states it. The import then scales X, Y and Z
+from that unit to the model unit of the document. The default is "Same as the document",
+which keeps the coordinates as they are.
+
+The elevation takes the same scale as the horizontal coordinates, after
+`ElevationScale` and `ElevationUnitFactor`. The whole Z factor is therefore:
+
+```
+Z = sample x ElevationScale x ElevationUnitFactor x model unit scale
+```
+
+Use `ElevationUnitFactor` when the elevation unit differs from the horizontal unit of the
+source, for example feet of height on a grid in metres. Use `ModelUnits` when the source
+unit differs from the document unit.
+
+The order of the transforms is the scale first, then the offset:
+
+```
+document point = source point x model unit scale + offset
+```
+
+The offset comes last because the document keeps it in document units. The dialog and the
+command line therefore move the proposed offset when the model unit changes, unless an
+earlier import already fixed the offset.
+
+`LayoutUnits` states the unit for a layout, and its factor goes to the layout unit of the
+document. **The command imports into the model space only, so this option scales no
+geometry today.** The report prints its factor. The option becomes live when the plugin
+can import into a layout.
 
 ## Coordinates far from the origin
 

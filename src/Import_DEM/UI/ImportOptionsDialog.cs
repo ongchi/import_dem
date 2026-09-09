@@ -4,6 +4,7 @@ using Eto.Forms;
 using Import_DEM.Gdal;
 using Import_DEM.Grid;
 using Import_DEM.Import;
+using Rhino;
 using Rhino.Geometry;
 using Rhino.UI;
 
@@ -12,10 +13,16 @@ namespace Import_DEM.UI
     /// <summary>The dialog that collects the import options in interactive mode.</summary>
     public sealed class ImportOptionsDialog : Dialog<bool>
     {
+        private readonly RhinoDoc _doc;
         private readonly ImageSummary _summary;
         private readonly ImportOptions _options;
 
+        /// <summary>True when an earlier import fixed the offset. The unit choice must not move it.</summary>
+        private readonly bool _offsetComesFromDocument;
+
         private readonly TextBox _layerName = new();
+        private readonly DropDown _modelUnits = new();
+        private readonly DropDown _layoutUnits = new();
         private readonly DropDown _band = new();
         private readonly DropDown _surfaceType = new();
         private readonly NumericStepper _stride = new() { MinValue = 1, MaxValue = 10000, DecimalPlaces = 0 };
@@ -31,10 +38,12 @@ namespace Import_DEM.UI
         private readonly CheckBox _groupTiles = new();
         private readonly Label _estimate = new();
 
-        private ImportOptionsDialog(ImageSummary summary, ImportOptions options)
+        private ImportOptionsDialog(RhinoDoc doc, ImageSummary summary, ImportOptions options)
         {
+            _doc = doc;
             _summary = summary;
             _options = options;
+            _offsetComesFromDocument = OriginOffset.TryReadFromDocument(doc, out _);
 
             Title = "Import DEM";
             Padding = new Padding(10);
@@ -48,10 +57,10 @@ namespace Import_DEM.UI
         }
 
         /// <summary>Shows the dialog and writes the user choices into <paramref name="options"/>.</summary>
-        public static bool Show(ImageSummary summary, ImportOptions options)
+        public static bool Show(RhinoDoc doc, ImageSummary summary, ImportOptions options)
         {
-            var dialog = new ImportOptionsDialog(summary, options);
-            return dialog.ShowModal(RhinoEtoApp.MainWindowForDocument(Rhino.RhinoDoc.ActiveDoc));
+            var dialog = new ImportOptionsDialog(doc, summary, options);
+            return dialog.ShowModal(RhinoEtoApp.MainWindowForDocument(doc));
         }
 
         private void BuildControls()
@@ -87,18 +96,51 @@ namespace Import_DEM.UI
             _elevationScale.Value = _options.ElevationScale;
             _elevationUnitFactor.Value = _options.ElevationUnitFactor;
 
+            FillUnits(_modelUnits, _options.ModelUnits);
+            FillUnits(_layoutUnits, _options.LayoutUnits);
+            _modelUnits.SelectedIndexChanged += (_, _) => OnModelUnitsChanged();
+
             _applyOffset.Text = "Move the data near the world origin";
             _applyOffset.Checked = _options.ApplyOffset;
             _applyOffset.CheckedChanged += (_, _) => UpdateEnabledState();
 
-            var center = OriginOffset.CenterOf(_summary.Info);
-            var offset = _options.ApplyOffset ? _options.Offset : OriginOffset.Suggest(center.X, center.Y);
+            var offset = _options.ApplyOffset ? _options.Offset : SuggestOffset();
             _offsetX.Value = offset.X;
             _offsetY.Value = offset.Y;
 
             _groupTiles.Text = "Group the surfaces of this import";
             _groupTiles.Checked = _options.GroupTiles;
         }
+
+        private static void FillUnits(DropDown dropDown, UnitSystem selected)
+        {
+            foreach (var item in UnitChoice.Items)
+                dropDown.Items.Add(new ListItem { Text = item.Label, Key = item.Unit.ToString() });
+
+            dropDown.SelectedIndex = UnitChoice.IndexOf(selected);
+        }
+
+        /// <summary>
+        /// The proposed offset follows the model unit, because the offset is in document units.
+        /// </summary>
+        private Vector3d SuggestOffset()
+        {
+            var center = OriginOffset.CenterOf(_summary.Info);
+            var scale = UnitChoice.ScaleTo(SelectedUnits(_modelUnits), _doc.ModelUnitSystem);
+            return OriginOffset.Suggest(center.X * scale, center.Y * scale);
+        }
+
+        private void OnModelUnitsChanged()
+        {
+            if (_offsetComesFromDocument)
+                return;
+
+            var offset = SuggestOffset();
+            _offsetX.Value = offset.X;
+            _offsetY.Value = offset.Y;
+        }
+
+        private static UnitSystem SelectedUnits(DropDown dropDown) => UnitChoice.At(dropDown.SelectedIndex);
 
         private Control BuildLayout()
         {
@@ -116,6 +158,8 @@ namespace Import_DEM.UI
             layout.AddRow(new Label { Text = "Their elevation" }, _noDataElevation);
             layout.AddRow(new Label { Text = "Elevation scale" }, _elevationScale);
             layout.AddRow(new Label { Text = "Elevation unit factor" }, _elevationUnitFactor);
+            layout.AddRow(new Label { Text = "Model units" }, _modelUnits);
+            layout.AddRow(new Label { Text = "Layout units" }, _layoutUnits);
             layout.AddRow(new Label(), _applyOffset);
             layout.AddRow(new Label { Text = "Offset X" }, _offsetX);
             layout.AddRow(new Label { Text = "Offset Y" }, _offsetY);
@@ -188,6 +232,8 @@ namespace Import_DEM.UI
             _options.NoDataElevation = _noDataElevation.Value;
             _options.ElevationScale = _elevationScale.Value;
             _options.ElevationUnitFactor = _elevationUnitFactor.Value;
+            _options.ModelUnits = SelectedUnits(_modelUnits);
+            _options.LayoutUnits = SelectedUnits(_layoutUnits);
             _options.GroupTiles = _groupTiles.Checked == true;
             _options.ApplyOffset = _applyOffset.Checked == true;
             _options.Offset = _options.ApplyOffset ? new Vector3d(_offsetX.Value, _offsetY.Value, 0.0) : Vector3d.Zero;

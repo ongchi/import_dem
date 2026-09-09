@@ -17,10 +17,13 @@ namespace Import_DEM.UI
         private static readonly string[] NoDataNames = { "Fill", "Constant", "SkipTile" };
 
         /// <summary>Asks for the options. Returns false when the user cancels.</summary>
-        public static bool TryPrompt(ImageSummary summary, ImportOptions options)
+        public static bool TryPrompt(RhinoDoc doc, ImageSummary summary, ImportOptions options)
         {
+            var offsetComesFromDocument = OriginOffset.TryReadFromDocument(doc, out _);
             var bandNames = summary.Info.Bands.Select(band => band.Index.ToString()).ToArray();
             var bandIndex = System.Math.Max(0, System.Array.IndexOf(bandNames, options.Band.ToString()));
+            var modelUnitsIndex = UnitChoice.IndexOf(options.ModelUnits);
+            var layoutUnitsIndex = UnitChoice.IndexOf(options.LayoutUnits);
 
             var stride = new OptionInteger(options.Stride, 1, 10000);
             var maxPatchSize = new OptionInteger(options.MaxPatchSize, GridTiler.MinimumPatchSize, 5000);
@@ -56,6 +59,8 @@ namespace Import_DEM.UI
                 var scaleOption = getOption.AddOptionDouble("ElevationScale", ref elevationScale);
                 var unitOption = getOption.AddOptionDouble("ElevationUnitFactor", ref elevationUnitFactor);
                 var layerOption = getOption.AddOption("Layer");
+                var modelUnitsOption = getOption.AddOptionList("ModelUnits", UnitChoice.Labels, modelUnitsIndex);
+                var layoutUnitsOption = getOption.AddOptionList("LayoutUnits", UnitChoice.Labels, layoutUnitsIndex);
                 var offsetOption = getOption.AddOptionToggle("MoveToOrigin", ref applyOffset);
                 var offsetXOption = applyOffset.CurrentValue ? getOption.AddOptionDouble("OffsetX", ref offsetX) : -1;
                 var offsetYOption = applyOffset.CurrentValue ? getOption.AddOptionDouble("OffsetY", ref offsetY) : -1;
@@ -93,6 +98,22 @@ namespace Import_DEM.UI
                 {
                     options.NoDataMode = (NoDataMode)getOption.Option().CurrentListOptionIndex;
                 }
+                else if (chosen == modelUnitsOption)
+                {
+                    modelUnitsIndex = getOption.Option().CurrentListOptionIndex;
+
+                    // The offset is in document units, so the proposal follows the model unit.
+                    if (!offsetComesFromDocument)
+                    {
+                        var suggestion = SuggestOffset(doc, summary, UnitChoice.At(modelUnitsIndex));
+                        offsetX = new OptionDouble(suggestion.X);
+                        offsetY = new OptionDouble(suggestion.Y);
+                    }
+                }
+                else if (chosen == layoutUnitsOption)
+                {
+                    layoutUnitsIndex = getOption.Option().CurrentListOptionIndex;
+                }
                 else if (chosen == layerOption)
                 {
                     var layerName = options.LayerName;
@@ -114,6 +135,8 @@ namespace Import_DEM.UI
             options.NoDataElevation = noDataElevation.CurrentValue;
             options.ElevationScale = elevationScale.CurrentValue;
             options.ElevationUnitFactor = elevationUnitFactor.CurrentValue;
+            options.ModelUnits = UnitChoice.At(modelUnitsIndex);
+            options.LayoutUnits = UnitChoice.At(layoutUnitsIndex);
             options.GroupTiles = groupTiles.CurrentValue;
             options.ApplyOffset = applyOffset.CurrentValue;
             options.Offset = applyOffset.CurrentValue
@@ -121,6 +144,14 @@ namespace Import_DEM.UI
                 : Vector3d.Zero;
 
             return true;
+        }
+
+        /// <summary>The proposed offset for a model unit, in document units.</summary>
+        private static Vector3d SuggestOffset(RhinoDoc doc, ImageSummary summary, UnitSystem modelUnits)
+        {
+            var center = OriginOffset.CenterOf(summary.Info);
+            var scale = UnitChoice.ScaleTo(modelUnits, doc.ModelUnitSystem);
+            return OriginOffset.Suggest(center.X * scale, center.Y * scale);
         }
     }
 }

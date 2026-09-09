@@ -54,6 +54,7 @@ try:
         ImportOptionsResolver,
         NoDataMode,
         SurfaceType,
+        UnitChoice,
     )
 except Exception:
     write_report(["FAIL  load the plugin assembly", traceback.format_exc()])
@@ -269,6 +270,60 @@ def case_elevation_scale():
     # The two factors multiply, so 2.0 and 0.5 leave the elevation unchanged.
     start = corner_point(surfaces[0], False, False)
     check("elevation: the scale and the unit factor multiply", close_to(start.Z, 1200.0, 1e-2), f"Z {start.Z}")
+
+
+# ---------------------------------------------------------------------------
+# The model unit that scales the source coordinates.
+# ---------------------------------------------------------------------------
+def case_model_units():
+    check("units: the scale of the same unit is one",
+          UnitChoice.ScaleTo(Rhino.UnitSystem.Meters, Rhino.UnitSystem.Meters) == 1.0)
+    check("units: an unstated unit gives the scale one",
+          UnitChoice.ScaleTo(UnitChoice.SameAsDocument, Rhino.UnitSystem.Meters) == 1.0)
+    check("units: meters to millimeters gives one thousand",
+          close_to(UnitChoice.ScaleTo(Rhino.UnitSystem.Meters, Rhino.UnitSystem.Millimeters), 1000.0, 1e-9))
+    check("units: feet to meters gives the foot length",
+          close_to(UnitChoice.ScaleTo(Rhino.UnitSystem.Feet, Rhino.UnitSystem.Meters), 0.3048, 1e-9))
+
+    doc = new_document()
+    doc.AdjustModelUnitSystem(Rhino.UnitSystem.Meters, False)
+
+    def configure(options):
+        options.ApplyOffset = False
+        options.Offset = Vector3d.Zero
+        options.ModelUnits = Rhino.UnitSystem.Feet
+        options.Stride = 1
+        options.MaxPatchSize = 1000
+
+    _, _, report = import_file(doc, sample("hill.img"), configure)
+    check("units: the report holds the model scale", close_to(report.ModelScale, 0.3048, 1e-9),
+          f"scale={report.ModelScale}")
+
+    surfaces = surfaces_of(doc)
+    if not surfaces:
+        check("units: surface exists", False)
+        return
+
+    start = corner_point(surfaces[0], False, False)
+    check("units: x and y scaled from feet to meters",
+          close_to(start.X, FIRST_SAMPLE_X * 0.3048, 1e-3) and close_to(start.Y, FIRST_SAMPLE_Y * 0.3048, 1e-3),
+          f"({start.X}, {start.Y})")
+    check("units: the elevation takes the same scale", close_to(start.Z, 1200.0 * 0.3048, 1e-2), f"Z {start.Z}")
+
+
+def case_model_units_default():
+    """The default leaves the coordinates as they are."""
+    doc = new_document()
+
+    def configure(options):
+        options.ApplyOffset = False
+        options.Offset = Vector3d.Zero
+        options.Stride = 1
+        options.MaxPatchSize = 1000
+
+    _, _, report = import_file(doc, sample("hill.img"), configure)
+    check("units: the default changes nothing", report.ModelScale == 1.0, f"scale={report.ModelScale}")
+    check("units: the report prints no unit line by default", report.ToUnitText() is None)
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +579,8 @@ CASES = [
     case_interpolated_elevation,
     case_approximated_control_points,
     case_elevation_scale,
+    case_model_units,
+    case_model_units_default,
     case_offset,
     case_offset_reuse,
     case_projection_user_text,

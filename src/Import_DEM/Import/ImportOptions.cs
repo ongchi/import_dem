@@ -1,4 +1,5 @@
 using Import_DEM.Gdal;
+using Rhino;
 using Rhino.Geometry;
 
 namespace Import_DEM.Import
@@ -66,6 +67,18 @@ namespace Import_DEM.Import
         /// </summary>
         public double ElevationUnitFactor { get; set; } = 1.0;
 
+        /// <summary>
+        /// The unit of the source coordinates when the model space receives the data. The import
+        /// scales X, Y and Z from this unit to the model unit of the document.
+        /// </summary>
+        public UnitSystem ModelUnits { get; set; } = UnitChoice.SameAsDocument;
+
+        /// <summary>
+        /// The unit of the source coordinates when a layout receives the data.
+        /// The command imports into the model space only, so this unit scales nothing yet.
+        /// </summary>
+        public UnitSystem LayoutUnits { get; set; } = UnitChoice.SameAsDocument;
+
         /// <summary>True to move the data by <see cref="Offset"/>.</summary>
         public bool ApplyOffset { get; set; }
 
@@ -75,8 +88,19 @@ namespace Import_DEM.Import
         /// <summary>True to group the tiles of one import.</summary>
         public bool GroupTiles { get; set; } = true;
 
-        /// <summary>The whole factor that turns a sample into a Z coordinate.</summary>
+        /// <summary>
+        /// The factor that turns a sample into a Z coordinate in the source unit. The model unit
+        /// scale then applies to X, Y and Z alike.
+        /// </summary>
         public double ElevationFactor => ElevationScale * ElevationUnitFactor;
+
+        /// <summary>The factor from <see cref="ModelUnits"/> to the model unit of the document.</summary>
+        public double ModelScale(RhinoDoc doc) =>
+            UnitChoice.ScaleTo(ModelUnits, doc?.ModelUnitSystem ?? UnitChoice.SameAsDocument);
+
+        /// <summary>The factor from <see cref="LayoutUnits"/> to the layout unit of the document.</summary>
+        public double LayoutScale(RhinoDoc doc) =>
+            UnitChoice.ScaleTo(LayoutUnits, doc?.PageUnitSystem ?? UnitChoice.SameAsDocument);
 
         /// <summary>The sample budget that the surface type can carry.</summary>
         public long SampleBudget =>
