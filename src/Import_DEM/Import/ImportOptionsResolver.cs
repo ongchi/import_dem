@@ -32,6 +32,8 @@ namespace Import_DEM.Import
                 LayerName = summary.DefaultLayerName(),
                 SurfaceType = SurfaceType.Interpolated,
                 Band = summary.Info.Bands[0].Index,
+                SourceCrs = summary.DetectedCrs.EpsgCode ?? string.Empty,
+                DetectedSourceCrs = summary.DetectedCrs.EpsgCode ?? string.Empty,
             };
 
             options.MaxPatchSize = ImportOptions.DefaultPatchSize(options.SurfaceType);

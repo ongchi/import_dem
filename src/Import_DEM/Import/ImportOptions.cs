@@ -68,6 +68,40 @@ namespace Import_DEM.Import
         public double ElevationUnitFactor { get; set; } = 1.0;
 
         /// <summary>
+        /// The coordinate reference system of the source. An empty text means the CRS that the
+        /// file states.
+        /// </summary>
+        public string SourceCrs { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The coordinate reference system of the result. An empty text means no translation.
+        /// </summary>
+        public string TargetCrs { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The EPSG code that the plugin detected in the file. While <see cref="SourceCrs"/> holds
+        /// this text, the import reads the CRS from the file itself, because the code is a match
+        /// and not a proof.
+        /// </summary>
+        public string DetectedSourceCrs { get; set; } = string.Empty;
+
+        /// <summary>True when the import translates the data to <see cref="TargetCrs"/>.</summary>
+        public bool TranslatesCrs => !string.IsNullOrWhiteSpace(TargetCrs);
+
+        /// <summary>
+        /// The source CRS that replaces the CRS of the file, or null when the file states it.
+        /// </summary>
+        public string? SourceCrsOverride => OverrideFor(SourceCrs);
+
+        /// <summary>The override that a source CRS text gives. See <see cref="SourceCrsOverride"/>.</summary>
+        public string? OverrideFor(string? sourceCrs)
+        {
+            var text = sourceCrs?.Trim() ?? string.Empty;
+            var isTheDetectedCode = string.Equals(text, DetectedSourceCrs.Trim(), System.StringComparison.OrdinalIgnoreCase);
+            return text.Length == 0 || isTheDetectedCode ? null : text;
+        }
+
+        /// <summary>
         /// The unit of the source coordinates when the model space receives the data. The import
         /// scales X, Y and Z from this unit to the model unit of the document.
         /// </summary>

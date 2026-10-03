@@ -9,7 +9,8 @@ The first release reads ERDAS IMAGINE `.img` files.
 ## Requirement: GDAL
 
 The plugin reads the raster with the GDAL command line tools `gdalinfo` and
-`gdal_translate`. Install GDAL before the first import:
+`gdal_translate`. The CRS options also use `gdalwarp` and `gdalsrsinfo` of the same
+install. Install GDAL before the first import:
 
 ```bash
 brew install gdal
@@ -76,6 +77,8 @@ every option.
 | NoDataElevation | The elevation for the `Constant` mode. |
 | ElevationScale | A factor on Z, for a vertical exaggeration. |
 | ElevationUnitFactor | Converts the elevation unit to the horizontal unit, for example 0.3048 for feet in a metre grid. |
+| SourceCRS | The coordinate reference system of the file. The default is the CRS that the plugin detects in the file. See [Coordinate reference system](#coordinate-reference-system). |
+| TargetCRS | The coordinate reference system of the result. The default is empty, which translates nothing. |
 | ModelUnits | The unit of the source coordinates. The import scales X, Y and Z to the model unit of the document. |
 | LayoutUnits | The unit of the source coordinates for a layout. See [Units](#units). |
 | MoveToOrigin | Moves the data near the world origin. |
@@ -131,6 +134,43 @@ needs an elevation:
 
 The report counts the voids and the skipped tiles.
 
+## Coordinate reference system
+
+`SourceCRS` (from) and `TargetCRS` (to) translate the raster from one coordinate reference
+system to another. Both options accept each text that GDAL accepts: an EPSG code such as
+`EPSG:25833`, a WKT, or a PROJ string.
+
+- **SourceCRS** — the plugin detects the CRS of the file and runs `gdalsrsinfo` to find its
+  EPSG code. The code is the default value. When no code matches, the field is empty and
+  shows the CRS name of the file, and the import uses the CRS of the file. A text that you
+  type replaces the CRS of the file.
+- **TargetCRS** — empty by default. An empty target translates nothing, and `SourceCRS`
+  then has no effect. On the command line, the text `None` clears a CRS.
+
+The EPSG code is a match, not a proof. While `SourceCRS` holds the detected code, the
+import therefore reads the CRS from the file itself.
+
+`gdalwarp` does the translation. It writes a small VRT file that describes the raster in
+the target CRS, and `gdal_translate` then reads that VRT. The translation resamples the
+grid with the bilinear method, so the grid size and the sample values can change. The
+dialog has an **Apply CRS** button, which shows the new grid size, the new estimate and
+the new offset before the import runs.
+
+The order of the transforms is:
+
+```
+document point = translate(source point) x model unit scale + offset
+```
+
+- The translation is horizontal only. The elevation keeps its value.
+- `ModelUnits` states the unit of the **target** CRS when a translation runs.
+- The corners of a translated raster can hold no data. The `NoData` mode handles them.
+- A geographic target CRS gives X and Y in degrees. The import permits it and writes a
+  warning.
+- A translated raster is always north up, so a target CRS also makes a rotated raster
+  importable.
+- A file that states no CRS needs a `SourceCRS` text.
+
 ## Units
 
 A DEM states its coordinates in the unit of its coordinate system, and the plugin does not
@@ -177,8 +217,9 @@ file lands in the same place. When that key is absent, the plugin reads the key
 `Import_SHP.Offset` of the shapefile import plugin, so a DEM and a shapefile of the same
 area land together.
 
-The coordinate system text of the source goes on the import layer as user text with the
-key `Import_DEM.Projection`.
+The coordinate system text goes on the import layer as user text with the key
+`Import_DEM.Projection`. It is the text of the source, or the text of the target CRS when
+a translation ran.
 
 ## Tests
 
@@ -187,8 +228,8 @@ python3 tools/make_fixtures.py     # write the unit test fixtures, no GDAL neede
 ./build.sh                         # build and run the unit tests
 ```
 
-The unit tests cover the grid reader, the `gdalinfo` parser, the void fill and the tile
-split. They need no GDAL and no Rhino.
+The unit tests cover the grid reader, the `gdalinfo` parser, the `gdalwarp` arguments, the
+CRS detection, the void fill and the tile split. They need no GDAL and no Rhino.
 
 The surface construction needs RhinoCommon, so a second test runs inside Rhino:
 
@@ -215,8 +256,11 @@ case, so it changes no open model.
   no 64 bit samples. The loss is about 0.0001 m at an elevation of 1000 m. The import
   writes a warning when the source band holds 64 bit elevations.
 - A rotated or sheared raster is refused, because its samples do not sit on a grid that
-  follows the X and the Y axis. Use `gdalwarp` to write a north up copy.
-- The plugin does not change the coordinate system. It stores the text only.
+  follows the X and the Y axis. Set a `TargetCRS`, or use `gdalwarp` to write a north up
+  copy.
+- The CRS translation is horizontal only. It does not translate the elevation between
+  vertical datums.
+- The document does not remember the target CRS. Each import states it.
 - The plugin imports, it does not export.
 - The plugin imports one band as a height field. It does not import the image colours.
 - A void makes a filled surface, not a hole. Trimmed surfaces are out of scope.

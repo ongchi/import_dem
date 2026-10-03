@@ -383,6 +383,101 @@ def case_projection_user_text():
 
 
 # ---------------------------------------------------------------------------
+# The coordinate reference system translation.
+# ---------------------------------------------------------------------------
+def case_crs_detection():
+    summary = read_summary(sample("hill.img"))
+    check("crs: the summary detects the EPSG code", summary.DetectedCrs.EpsgCode == "EPSG:32633",
+          str(summary.DetectedCrs.EpsgCode))
+
+    options = ImportOptionsResolver.CreateDefaults(new_document(), summary)
+    check("crs: the source CRS defaults to the detected code", options.SourceCrs == "EPSG:32633", options.SourceCrs)
+    check("crs: the default translates nothing", not options.TranslatesCrs)
+
+
+def case_crs_translation():
+    """ETRS89 / UTM 33N sits a few decimeters at most from WGS 84 / UTM 33N, so the grid stays."""
+    doc = new_document()
+
+    def configure(options):
+        options.TargetCrs = "EPSG:25833"
+        options.ApplyOffset = False
+        options.Offset = Vector3d.Zero
+        options.Stride = 1
+        options.MaxPatchSize = 1000
+
+    summary, _, report = import_file(doc, sample("hill.img"), configure)
+    try:
+        check("crs: the summary describes the translated raster", summary.IsTranslated)
+        check("crs: the report holds the two CRS",
+              report.SourceCrs == "EPSG:32633" and report.TargetCrs == "EPSG:25833",
+              f"{report.SourceCrs} -> {report.TargetCrs}")
+        check("crs: the report prints the CRS line", report.ToCrsText() is not None)
+
+        surfaces = surfaces_of(doc)
+        if not surfaces:
+            check("crs: surface exists", False)
+            return
+
+        start = corner_point(surfaces[0], False, False)
+        check("crs: the surface keeps its place between two near CRS",
+              close_to(start.X, FIRST_SAMPLE_X, 1.0) and close_to(start.Y, FIRST_SAMPLE_Y, 1.0),
+              f"({start.X}, {start.Y})")
+        check("crs: the elevation keeps its value", close_to(start.Z, 1200.0, 1.0), f"Z {start.Z}")
+
+        layer_index = doc.Layers.FindByFullPath("hill", -1)
+        stored = doc.Layers[layer_index].GetUserString("Import_DEM.Projection") if layer_index >= 0 else None
+        check("crs: the layer holds the target CRS text", stored is not None and "ETRS89" in stored, str(stored)[:60])
+    finally:
+        summary.Dispose()
+
+
+def case_crs_geographic_target():
+    doc = new_document()
+
+    def configure(options):
+        options.TargetCrs = "EPSG:4326"
+        options.ApplyOffset = False
+        options.Offset = Vector3d.Zero
+
+    summary, _, report = import_file(doc, sample("hill.img"), configure)
+    try:
+        check("crs: a geographic target gives a warning",
+              any("geographic" in warning for warning in report.Warnings), str(list(report.Warnings)))
+
+        surfaces = surfaces_of(doc)
+        if not surfaces:
+            check("crs: geographic surface exists", False)
+            return
+
+        start = corner_point(surfaces[0], False, False)
+        check("crs: x and y are in degrees", close_to(start.X, 15.0, 0.1) and close_to(start.Y, 41.55, 0.1),
+              f"({start.X}, {start.Y})")
+    finally:
+        summary.Dispose()
+
+
+def case_crs_no_default_translation():
+    doc = new_document()
+    summary, _, report = import_file(doc, sample("hill.img"))
+    check("crs: the default import is not translated", not summary.IsTranslated)
+    check("crs: the report prints no CRS line by default", report.ToCrsText() is None)
+
+
+def case_crs_refused():
+    doc = new_document()
+
+    def configure(options):
+        options.TargetCrs = "EPSG:999999"
+
+    try:
+        import_file(doc, sample("hill.img"), configure)
+        check("crs: a target that GDAL does not know is refused", False, "the import did not fail")
+    except Exception as error:
+        check("crs: a target that GDAL does not know is refused", "gdalwarp" in str(error), str(error)[:120])
+
+
+# ---------------------------------------------------------------------------
 # The voids.
 # ---------------------------------------------------------------------------
 def case_void_fill():
@@ -584,6 +679,11 @@ CASES = [
     case_offset,
     case_offset_reuse,
     case_projection_user_text,
+    case_crs_detection,
+    case_crs_translation,
+    case_crs_geographic_target,
+    case_crs_no_default_translation,
+    case_crs_refused,
     case_void_fill,
     case_void_constant,
     case_void_skip_tile,

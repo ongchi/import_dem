@@ -36,6 +36,12 @@ namespace Import_DEM.Import
         /// <summary>The factor from the source unit to the layout unit of the document.</summary>
         public double LayoutScale { get; set; } = 1.0;
 
+        /// <summary>The CRS that the import translated from. Empty when no translation ran.</summary>
+        public string SourceCrs { get; set; } = string.Empty;
+
+        /// <summary>The CRS that the import translated to. Empty when no translation ran.</summary>
+        public string TargetCrs { get; set; } = string.Empty;
+
         public IReadOnlyList<string> Warnings => _warnings;
 
         /// <summary>Adds a warning. Each message text is kept one time only.</summary>
@@ -63,6 +69,14 @@ namespace Import_DEM.Import
                 text.Append(CultureInfo.CurrentCulture, $" {FailedTileCount} tiles gave no surface.");
 
             return text.ToString();
+        }
+
+        /// <summary>The CRS line, or null when no translation ran.</summary>
+        public string? ToCrsText()
+        {
+            return TargetCrs.Length == 0
+                ? null
+                : $"CRS: the import translated the coordinates from {SourceCrs} to {TargetCrs}.";
         }
 
         /// <summary>

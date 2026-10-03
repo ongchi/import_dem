@@ -17,6 +17,9 @@ namespace Import_DEM.Import
         /// <summary>Reads the raster and adds the surfaces to the document.</summary>
         public ImportReport Import(RhinoDoc doc, ImageSummary summary, ImportOptions options)
         {
+            // The translation comes first, because every later step reads the translated raster.
+            summary.ApplyCrs(options.SourceCrsOverride, options.TargetCrs);
+
             var transform = PointTransform.For(doc, options);
             var report = new ImportReport
             {
@@ -24,6 +27,7 @@ namespace Import_DEM.Import
                 ModelScale = transform.Scale,
                 LayoutScale = options.LayoutScale(doc),
             };
+            ReportTheTranslation(summary, options, report);
             RequireAxisAlignedRaster(summary.Info);
             WarnAboutTheBand(summary.Info, options, report);
 
@@ -38,6 +42,21 @@ namespace Import_DEM.Import
                 OriginOffset.WriteToDocument(doc, transform.Offset);
 
             return report;
+        }
+
+        private static void ReportTheTranslation(ImageSummary summary, ImportOptions options, ImportReport report)
+        {
+            if (!summary.IsTranslated)
+                return;
+
+            report.SourceCrs = options.SourceCrsOverride ?? summary.DetectedCrs.DisplayText;
+            report.TargetCrs = options.TargetCrs.Trim();
+
+            if (DetectedCrs.IsGeographic(summary.Info.CoordinateSystemWkt))
+            {
+                report.AddWarning(
+                    "The target CRS is geographic, so X and Y are in degrees. The elevation keeps its own unit.");
+            }
         }
 
         private static void RequireAxisAlignedRaster(GdalInfo info)

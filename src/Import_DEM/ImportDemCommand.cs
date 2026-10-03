@@ -31,7 +31,7 @@ namespace Import_DEM
 
             try
             {
-                var summary = ReadSummary(filePath, interactive);
+                using var summary = ReadSummary(filePath, interactive);
                 if (summary is null)
                     return Result.Cancel;
 

@@ -33,7 +33,7 @@ namespace Import_DEM
         {
             try
             {
-                var summary = ImageSummary.Read(filename, GdalLocation.Folder);
+                using var summary = ImageSummary.Read(filename, GdalLocation.Folder);
 
                 var importOptions = ImportOptionsResolver.Resolve(doc, summary, interactive: !options.BatchMode);
                 if (importOptions is null)

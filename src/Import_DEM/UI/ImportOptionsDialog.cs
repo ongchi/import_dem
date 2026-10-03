@@ -20,7 +20,11 @@ namespace Import_DEM.UI
         /// <summary>True when an earlier import fixed the offset. The unit choice must not move it.</summary>
         private readonly bool _offsetComesFromDocument;
 
+        private readonly Label _fileDescription = new();
         private readonly TextBox _layerName = new();
+        private readonly TextBox _sourceCrs = new();
+        private readonly TextBox _targetCrs = new() { PlaceholderText = "No translation" };
+        private readonly Button _applyCrs = new() { Text = "Apply CRS" };
         private readonly DropDown _modelUnits = new();
         private readonly DropDown _layoutUnits = new();
         private readonly DropDown _band = new();
@@ -65,7 +69,13 @@ namespace Import_DEM.UI
 
         private void BuildControls()
         {
+            _fileDescription.Text = FileDescription();
             _layerName.Text = _options.LayerName;
+
+            _sourceCrs.Text = _options.SourceCrs;
+            _sourceCrs.PlaceholderText = _summary.DetectedCrs.Name ?? "Not found in the file";
+            _targetCrs.Text = _options.TargetCrs;
+            _applyCrs.Click += (_, _) => ApplyCrs();
 
             foreach (var band in _summary.Info.Bands)
                 _band.Items.Add(new ListItem { Text = band.Label, Key = band.Index.ToString() });
@@ -140,14 +150,57 @@ namespace Import_DEM.UI
             _offsetY.Value = offset.Y;
         }
 
+        /// <summary>
+        /// Translates the raster to the target CRS and refreshes the fields that follow the grid:
+        /// the size, the stride, the estimate and the proposed offset. Returns the state of the
+        /// CRS fields: refused by GDAL, the same as before, or changed.
+        /// </summary>
+        private CrsState ApplyCrs()
+        {
+            bool changed;
+            try
+            {
+                changed = _summary.ApplyCrs(_options.OverrideFor(_sourceCrs.Text), _targetCrs.Text);
+            }
+            catch (System.Exception exception) when (exception is GdalFailureException or GdalNotFoundException)
+            {
+                Dialogs.ShowMessage(exception.Message, "Import DEM");
+                return CrsState.Refused;
+            }
+
+            if (!changed)
+                return CrsState.Unchanged;
+
+            _fileDescription.Text = FileDescription();
+
+            _options.SurfaceType = SelectedSurfaceType();
+            ImportOptionsResolver.ApplySurfaceTypeDefaults(_summary, _options);
+            _stride.Value = _options.Stride;
+            _maxPatchSize.Value = _options.MaxPatchSize;
+            UpdateEstimate();
+
+            OnModelUnitsChanged();
+            return CrsState.Changed;
+        }
+
+        private enum CrsState
+        {
+            Refused,
+            Unchanged,
+            Changed,
+        }
+
         private static UnitSystem SelectedUnits(DropDown dropDown) => UnitChoice.At(dropDown.SelectedIndex);
 
         private Control BuildLayout()
         {
             var layout = new DynamicLayout { DefaultSpacing = new Size(6, 6) };
 
-            layout.AddRow(new Label { Text = "File" }, new Label { Text = FileDescription() });
+            layout.AddRow(new Label { Text = "File" }, _fileDescription);
             layout.AddRow(new Label { Text = "Layer" }, _layerName);
+            layout.AddRow(new Label { Text = "Source CRS (from)" }, _sourceCrs);
+            layout.AddRow(new Label { Text = "Target CRS (to)" }, _targetCrs);
+            layout.AddRow(new Label(), _applyCrs);
             layout.AddRow(new Label { Text = "Elevation band" }, _band);
             layout.AddRow(new Label { Text = "Surface" }, _surfaceType);
             layout.AddRow(new Label { Text = "Keep 1 sample in" }, _stride);
@@ -179,7 +232,7 @@ namespace Import_DEM.UI
 
         private string FileDescription()
         {
-            return $"{_summary.Info.Width} x {_summary.Info.Height} samples, {_summary.Info.DriverShortName}";
+            return $"{_summary.Info.Width} x {_summary.Info.Height} samples, {_summary.SourceInfo.DriverShortName}";
         }
 
         /// <summary>The stride and the tile size follow the surface type, because the budgets differ.</summary>
@@ -222,6 +275,22 @@ namespace Import_DEM.UI
 
         private void Accept()
         {
+            // A CRS text that changed after the last apply moves the grid and the offset, so the
+            // user must see the new values before the import runs.
+            var crsState = ApplyCrs();
+            if (crsState == CrsState.Refused)
+                return;
+
+            if (crsState == CrsState.Changed)
+            {
+                Dialogs.ShowMessage(
+                    "The CRS changed. The dialog updated the grid and the offset. Examine them, then select Import again.",
+                    "Import DEM");
+                return;
+            }
+
+            _options.SourceCrs = _sourceCrs.Text.Trim();
+            _options.TargetCrs = _targetCrs.Text.Trim();
             _options.LayerName = _layerName.Text;
             _options.Band = SelectedBand();
             _options.SurfaceType = SelectedSurfaceType();

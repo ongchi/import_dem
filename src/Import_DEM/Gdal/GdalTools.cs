@@ -21,15 +21,23 @@ namespace Import_DEM.Gdal
             @"C:\Program Files\GDAL",
         };
 
-        private GdalTools(string gdalInfoPath, string gdalTranslatePath)
+        private GdalTools(string gdalInfoPath, string gdalTranslatePath, string? gdalWarpPath, string? gdalSrsInfoPath)
         {
             GdalInfoPath = gdalInfoPath;
             GdalTranslatePath = gdalTranslatePath;
+            GdalWarpPath = gdalWarpPath;
+            GdalSrsInfoPath = gdalSrsInfoPath;
         }
 
         public string GdalInfoPath { get; }
 
         public string GdalTranslatePath { get; }
+
+        /// <summary>The tool that translates a raster to another CRS, or null when the folder has none.</summary>
+        public string? GdalWarpPath { get; }
+
+        /// <summary>The tool that finds the EPSG code of a CRS, or null when the folder has none.</summary>
+        public string? GdalSrsInfoPath { get; }
 
         /// <summary>
         /// Finds the GDAL tools. The search order is the folder of <paramref name="preferredFolder"/>,
@@ -47,7 +55,13 @@ namespace Import_DEM.Gdal
                 var gdalTranslatePath = Path.Combine(folder, gdalTranslateName);
 
                 if (File.Exists(gdalInfoPath) && File.Exists(gdalTranslatePath))
-                    return new GdalTools(gdalInfoPath, gdalTranslatePath);
+                {
+                    return new GdalTools(
+                        gdalInfoPath,
+                        gdalTranslatePath,
+                        FindOptionalTool(folder, "gdalwarp"),
+                        FindOptionalTool(folder, "gdalsrsinfo"));
+                }
             }
 
             throw new GdalNotFoundException(
@@ -73,6 +87,12 @@ namespace Import_DEM.Gdal
 
             foreach (var folder in KnownFolders)
                 yield return folder;
+        }
+
+        private static string? FindOptionalTool(string folder, string name)
+        {
+            var path = Path.Combine(folder, ExecutableName(name));
+            return File.Exists(path) ? path : null;
         }
 
         private static string ExecutableName(string name)

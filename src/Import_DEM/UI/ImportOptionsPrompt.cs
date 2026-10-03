@@ -16,6 +16,9 @@ namespace Import_DEM.UI
         private static readonly string[] ResamplingNames = { "Nearest", "Average" };
         private static readonly string[] NoDataNames = { "Fill", "Constant", "SkipTile" };
 
+        /// <summary>The command line text of an empty CRS.</summary>
+        private const string NoCrs = "None";
+
         /// <summary>Asks for the options. Returns false when the user cancels.</summary>
         public static bool TryPrompt(RhinoDoc doc, ImageSummary summary, ImportOptions options)
         {
@@ -59,6 +62,8 @@ namespace Import_DEM.UI
                 var scaleOption = getOption.AddOptionDouble("ElevationScale", ref elevationScale);
                 var unitOption = getOption.AddOptionDouble("ElevationUnitFactor", ref elevationUnitFactor);
                 var layerOption = getOption.AddOption("Layer");
+                var sourceCrsOption = getOption.AddOption("SourceCRS", CrsOptionValue(options.SourceCrs));
+                var targetCrsOption = getOption.AddOption("TargetCRS", CrsOptionValue(options.TargetCrs));
                 var modelUnitsOption = getOption.AddOptionList("ModelUnits", UnitChoice.Labels, modelUnitsIndex);
                 var layoutUnitsOption = getOption.AddOptionList("LayoutUnits", UnitChoice.Labels, layoutUnitsIndex);
                 var offsetOption = getOption.AddOptionToggle("MoveToOrigin", ref applyOffset);
@@ -122,6 +127,34 @@ namespace Import_DEM.UI
                     if (!string.IsNullOrWhiteSpace(layerName))
                         options.LayerName = layerName.Trim();
                 }
+                else if (chosen == sourceCrsOption || chosen == targetCrsOption)
+                {
+                    var isSource = chosen == sourceCrsOption;
+                    if (!TryGetCrs(isSource ? "Source CRS" : "Target CRS", isSource ? options.SourceCrs : options.TargetCrs, out var crs))
+                        continue;
+
+                    var sourceCrs = isSource ? crs : options.SourceCrs;
+                    var targetCrs = isSource ? options.TargetCrs : crs;
+                    if (!TryApplyCrs(summary, options, sourceCrs, targetCrs, out var gridChanged))
+                        continue;
+
+                    options.SourceCrs = sourceCrs;
+                    options.TargetCrs = targetCrs;
+                    if (!gridChanged)
+                        continue;
+
+                    // The translated grid has another size and another center.
+                    ImportOptionsResolver.ApplySurfaceTypeDefaults(summary, options);
+                    stride = new OptionInteger(options.Stride, 1, 10000);
+                    maxPatchSize = new OptionInteger(options.MaxPatchSize, GridTiler.MinimumPatchSize, 5000);
+
+                    if (!offsetComesFromDocument)
+                    {
+                        var suggestion = SuggestOffset(doc, summary, UnitChoice.At(modelUnitsIndex));
+                        offsetX = new OptionDouble(suggestion.X);
+                        offsetY = new OptionDouble(suggestion.Y);
+                    }
+                }
                 else if (chosen == strideOption || chosen == patchOption || chosen == noDataElevationOption
                          || chosen == scaleOption || chosen == unitOption || chosen == offsetOption
                          || chosen == offsetXOption || chosen == offsetYOption || chosen == groupOption)
@@ -144,6 +177,44 @@ namespace Import_DEM.UI
                 : Vector3d.Zero;
 
             return true;
+        }
+
+        /// <summary>The text that the command line shows for a CRS option.</summary>
+        private static string CrsOptionValue(string crs) => string.IsNullOrWhiteSpace(crs) ? NoCrs : crs.Trim();
+
+        /// <summary>Asks for a CRS text. The text "None" clears the value.</summary>
+        private static bool TryGetCrs(string prompt, string current, out string crs)
+        {
+            crs = CrsOptionValue(current);
+            if (RhinoGet.GetString($"{prompt}, or {NoCrs}", true, ref crs) != Rhino.Commands.Result.Success)
+                return false;
+
+            crs = crs.Trim().Trim('"');
+            if (crs.Length == 0 || string.Equals(crs, NoCrs, System.StringComparison.OrdinalIgnoreCase))
+                crs = string.Empty;
+
+            return true;
+        }
+
+        /// <summary>Translates the raster. A CRS that GDAL refuses gives a message and no change.</summary>
+        private static bool TryApplyCrs(
+            ImageSummary summary,
+            ImportOptions options,
+            string sourceCrs,
+            string targetCrs,
+            out bool gridChanged)
+        {
+            try
+            {
+                gridChanged = summary.ApplyCrs(options.OverrideFor(sourceCrs), targetCrs);
+                return true;
+            }
+            catch (System.Exception exception) when (exception is GdalFailureException or GdalNotFoundException)
+            {
+                RhinoApp.WriteLine(exception.Message);
+                gridChanged = false;
+                return false;
+            }
         }
 
         /// <summary>The proposed offset for a model unit, in document units.</summary>
